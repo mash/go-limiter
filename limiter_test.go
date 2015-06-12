@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/mash/go-limiter/redigo"
+	"github.com/mash/go-limiter/adaptor/redigo"
 	"github.com/soh335/go-test-redisserver"
 )
 
@@ -29,8 +29,8 @@ func MustStartRedisTestServer() *redistest.Server {
 	return nil
 }
 
-func redisclient() redis.Conn {
-	pool := redis.Pool{
+func redispool() redis.Pool {
+	return redis.Pool{
 		Dial: func() (redis.Conn, error) {
 			redisNetwork := os.Getenv("REDIS_NETWORK")
 			if redisNetwork == "" {
@@ -43,7 +43,6 @@ func redisclient() redis.Conn {
 			return redis.Dial(redisNetwork, redisAddress)
 		},
 	}
-	return pool.Get()
 }
 
 type incrementer struct {
@@ -72,11 +71,11 @@ func TestLimiter(t *testing.T) {
 	if redisserver != nil {
 		defer redisserver.Stop()
 	}
-	client := redisclient()
-	defer client.Close()
+	pool := redispool()
+	defer pool.Close()
 
 	quota := Quota{Limit: 3, Within: 1 * time.Second}
-	limiter := NewLimiter(quota, redigo.NewRedigoAdaptor(client))
+	limiter := NewLimiter(quota, redigo.NewRedigoAdaptor(pool))
 	i := incrementer{count: 0}
 	handler := limiter.Handle(&i)
 

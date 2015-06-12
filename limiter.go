@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mash/go-limiter/adaptor"
 )
 
 const (
@@ -33,21 +35,16 @@ type Result struct {
 	Counter    uint64
 }
 
-type RedisClient interface {
-	Get(key string) (uint64, error)
-	Incrx(key string, seconds int) error
-}
-
 type Limiter struct {
 	quota                   Quota
-	redis                   RedisClient
+	redis                   adaptor.RedisPool
 	keyPrefix, keyDelimiter string
 	Identify                func(req *http.Request) (string, error)
 	ErrorHandler            func(w http.ResponseWriter, req *http.Request, err error)
 	DeniedHandler           func(w http.ResponseWriter, req *http.Request, result Result)
 }
 
-func NewLimiter(q Quota, redis RedisClient) Limiter {
+func NewLimiter(q Quota, redis adaptor.RedisPool) Limiter {
 	return Limiter{
 		quota:         q,
 		redis:         redis,
@@ -67,7 +64,10 @@ func (l Limiter) Handle(next http.Handler) http.Handler {
 			return
 		}
 		if identifier != "" {
-			result, err := l.CheckLimit(identifier)
+			client := l.borrow()
+			defer client.Close()
+
+			result, err := l.CheckLimit(identifier, client)
 			if err != nil {
 				l.ErrorHandler(w, req, err)
 				return
@@ -82,11 +82,11 @@ func (l Limiter) Handle(next http.Handler) http.Handler {
 	})
 }
 
-func (l Limiter) CheckLimit(identifier string) (*Result, error) {
+func (l Limiter) CheckLimit(identifier string, client adaptor.RedisClient) (*Result, error) {
 	now := time.Now()
 	key := l.Key(now, identifier)
 
-	counter, err := l.redis.Get(key)
+	counter, err := client.Get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (l Limiter) CheckLimit(identifier string) (*Result, error) {
 	reset := l.quota.ResetUnix(now)
 
 	if counter < l.quota.Limit {
-		err = l.redis.Incrx(key, int(l.quota.Within.Seconds()))
+		err = client.Incrx(key, int(l.quota.Within.Seconds()))
 		if err != nil {
 			return nil, err
 		}
@@ -128,6 +128,10 @@ func (l Limiter) SetRateLimitHeaders(w http.ResponseWriter, result Result) {
 	headers.Set("X-Rate-Limit-Limit", strconv.FormatUint(l.quota.Limit, 10))
 	headers.Set("X-Rate-Limit-Reset", strconv.FormatInt(result.ResetUnix, 10))
 	headers.Set("X-Rate-Limit-Remaining", strconv.FormatUint(result.Remaining, 10))
+}
+
+func (l Limiter) borrow() adaptor.RedisClient {
+	return l.redis.Borrow()
 }
 
 func DefaultErrorHandler(w http.ResponseWriter, req *http.Request, err error) {

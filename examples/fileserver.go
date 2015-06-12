@@ -7,7 +7,7 @@ import (
 
 	"github.com/garyburd/redigo/redis"
 	"github.com/mash/go-limiter"
-	"github.com/mash/go-limiter/redigo"
+	"github.com/mash/go-limiter/adaptor/redigo"
 )
 
 func main() {
@@ -20,11 +20,10 @@ func main() {
 			return c, err
 		},
 	}
-	client := pool.Get()
-	defer client.Close()
+	defer pool.Close()
 
 	quota := limiter.Quota{Limit: 3, Within: 1 * time.Minute}
-	limiter := limiter.NewLimiter(quota, redigo.NewRedigoAdaptor(client))
+	limiter := limiter.NewLimiter(quota, redigo.NewRedigoAdaptor(pool))
 
 	handler := http.FileServer(http.Dir("."))
 	port := ":8080"
