@@ -23,7 +23,7 @@ func main() {
 	defer pool.Close()
 
 	quota := limiter.Quota{Limit: 3, Within: 1 * time.Minute}
-	limiter := limiter.NewLimiter(quota, redigo.NewRedigoAdaptor(pool))
+	limiter := limiter.NewLimiter(quota, redigo.NewRedigoAdaptor(&pool))
 
 	handler := http.FileServer(http.Dir("."))
 	port := ":8080"

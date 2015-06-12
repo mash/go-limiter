@@ -6,10 +6,10 @@ import (
 )
 
 type RedisPool struct {
-	pool redis.Pool
+	pool *redis.Pool
 }
 
-func NewRedigoAdaptor(pool redis.Pool) RedisPool {
+func NewRedigoAdaptor(pool *redis.Pool) RedisPool {
 	return RedisPool{pool: pool}
 }
 

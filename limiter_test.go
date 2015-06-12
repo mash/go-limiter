@@ -75,7 +75,7 @@ func TestLimiter(t *testing.T) {
 	defer pool.Close()
 
 	quota := Quota{Limit: 3, Within: 1 * time.Second}
-	limiter := NewLimiter(quota, redigo.NewRedigoAdaptor(pool))
+	limiter := NewLimiter(quota, redigo.NewRedigoAdaptor(&pool))
 	i := incrementer{count: 0}
 	handler := limiter.Handle(&i)
 
