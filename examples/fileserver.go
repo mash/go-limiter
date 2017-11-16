@@ -22,7 +22,13 @@ func main() {
 
 	// try:
 	// curl -v "http://localhost:8080/" -H "X-User-Id: 1"
-	l := limiter.New(quota, redigostore.New(&pool), limiter.Key, limiter.HeaderIdentifier("X-User-Id"), limiter.DefaultErrorHandler)
+	l := limiter.New(quota,
+		redigostore.New(&pool),
+		limiter.Key,
+		limiter.HeaderIdentifier("X-User-Id"),
+		limiter.DefaultHeaderSetter,
+		limiter.DefaultErrorHandler)
+	// or limiter.Default(quota, redigostore.New(&pool))
 
 	handler := http.FileServer(http.Dir("."))
 	port := ":8080"

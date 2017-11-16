@@ -79,7 +79,7 @@ func TestLimiter(t *testing.T) {
 	defer pool.Close()
 
 	quota := Quota{Limit: 3, Within: 1 * time.Second}
-	l := New(quota, redigostore.New(&pool), Key, HeaderIdentifier("X-USER-ID"), DefaultErrorHandler)
+	l := New(quota, redigostore.New(&pool), Key, HeaderIdentifier("X-USER-ID"), DefaultHeaderSetter, DefaultErrorHandler)
 	i := incrementer{count: 0}
 	handler := l.Handle(&i)
 
