@@ -1,6 +1,7 @@
 package limiter
 
 import (
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,7 +10,7 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/mash/go-limiter/adaptor/redigo"
+	"github.com/mash/go-limiter/redigostore"
 	"github.com/soh335/go-test-redisserver"
 )
 
@@ -40,7 +41,10 @@ func redispool() redis.Pool {
 			if redisAddress == "" {
 				redisAddress = "localhost:6379"
 			}
-			return redis.Dial(redisNetwork, redisAddress)
+			conn, err := redis.Dial(redisNetwork, redisAddress)
+			logger := log.New(os.Stdout, "", log.Lmicroseconds|log.Lshortfile)
+
+			return redis.NewLoggingConn(conn, logger, "[Redis]"), err
 		},
 	}
 }
@@ -75,59 +79,75 @@ func TestLimiter(t *testing.T) {
 	defer pool.Close()
 
 	quota := Quota{Limit: 3, Within: 1 * time.Second}
-	limiter := NewLimiter(quota, redigo.NewRedigoAdaptor(&pool))
+	l := New(quota, redigostore.New(&pool), Key, HeaderIdentifier("X-USER-ID"), DefaultErrorHandler)
 	i := incrementer{count: 0}
-	handler := limiter.Handle(&i)
+	handler := l.Handle(&i)
 
-	expectedResults := []struct {
-		Code      int
-		Body      string
-		Limit     string
-		Remaining string
+	tests := []struct {
+		UserId                              string
+		Code                                int
+		Description, Body, Limit, Remaining string
 	}{
 		{
-			Code:      200,
-			Body:      "0",
-			Limit:     "3",
-			Remaining: "2",
+			Description: "1st request",
+			UserId:      "1",
+			Code:        200,
+			Body:        "0",
+			Limit:       "3",
+			Remaining:   "2",
 		},
 		{
-			Code:      200,
-			Body:      "1",
-			Limit:     "3",
-			Remaining: "1",
+			Description: "2nd request",
+			UserId:      "1",
+			Code:        200,
+			Body:        "1",
+			Limit:       "3",
+			Remaining:   "1",
 		},
 		{
-			Code:      200,
-			Body:      "2",
-			Limit:     "3",
-			Remaining: "0",
+			Description: "3rd request",
+			UserId:      "1",
+			Code:        200,
+			Body:        "2",
+			Limit:       "3",
+			Remaining:   "0",
 		},
 		{
-			Code:      429,
-			Body:      "Too Many Requests\n",
-			Limit:     "3",
-			Remaining: "0",
+			Description: "4th request gets 429",
+			UserId:      "1",
+			Code:        429,
+			Body:        "Too Many Requests\n", // incrementer doesn't count up
+			Limit:       "3",
+			Remaining:   "0",
 		},
-	}
+		{
+			Description: "1st request from user2",
+			UserId:      "2",
+			Code:        200,
+			Body:        "3",
+			Limit:       "3",
+			Remaining:   "2",
+		}}
 
-	for _, expectedResult := range expectedResults {
-		recorder, err := serveHTTP(handler)
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
-		if recorder.Code != expectedResult.Code {
-			t.Errorf("Expected %d but got: %d, recorder: %#v", expectedResult.Code, recorder.Code, recorder)
+	for _, test := range tests {
+		req, _ := http.NewRequest("GET", "/", nil)
+		req.Header.Set("X-USER-ID", test.UserId)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+
+		t.Logf("--- %s", test.Description)
+		if recorder.Code != test.Code {
+			t.Errorf("Expected Code: %d but got: %d, recorder: %#v", test.Code, recorder.Code, recorder)
 		}
 		body := recorder.Body.String()
-		if body != expectedResult.Body {
-			t.Errorf("Expected %s but got: %s, recorder: %#v", expectedResult.Body, body, recorder)
+		if body != test.Body {
+			t.Errorf("Expected Body: %s but got: %s, recorder: %#v", test.Body, body, recorder)
 		}
-		if recorder.HeaderMap.Get("X-Rate-Limit-Limit") != expectedResult.Limit {
-			t.Errorf("Expected %s but got: %s, recorder: %#v", expectedResult.Limit, recorder.HeaderMap.Get("X-Rate-Limit-Limit"), recorder)
+		if recorder.HeaderMap.Get("X-Rate-Limit-Limit") != test.Limit {
+			t.Errorf("Expected X-Rate-Limit-Limit: %s but got: %s, recorder: %#v", test.Limit, recorder.HeaderMap.Get("X-Rate-Limit-Limit"), recorder)
 		}
-		if recorder.HeaderMap.Get("X-Rate-Limit-Remaining") != expectedResult.Remaining {
-			t.Errorf("Expected %s but got: %s, recorder: %#v", expectedResult.Remaining, recorder.HeaderMap.Get("X-Rate-Limit-Remaining"), recorder)
+		if recorder.HeaderMap.Get("X-Rate-Limit-Remaining") != test.Remaining {
+			t.Errorf("Expected X-Rate-Limit-Remaining: %s but got: %s, recorder: %#v", test.Remaining, recorder.HeaderMap.Get("X-Rate-Limit-Remaining"), recorder)
 		}
 	}
 }
