@@ -82,10 +82,9 @@ func TestLimiter(t *testing.T) {
 	l := New(quota,
 		redigostore.New(&pool),
 		Key,
-		HeaderIdentifier("X-USER-ID"),
-		DefaultErrorHandler(quota))
+		HeaderIdentifier("X-USER-ID"))
 	i := incrementer{count: 0}
-	handler := l.Handle(SetHeaderMiddleware(quota)(&i))
+	handler := l.Handle(&i, DefaultErrorHandler)
 
 	tests := []struct {
 		UserId                              string

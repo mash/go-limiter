@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -53,24 +52,22 @@ type Result struct {
 }
 
 type Limiter struct {
-	quota        Quota
-	store        Store
-	Keyer        Keyer
-	Identifier   Identifier
-	ErrorHandler ErrorHandler
+	quota      Quota
+	store      Store
+	Keyer      Keyer
+	Identifier Identifier
 }
 
 func Default(q Quota, store Store) Limiter {
-	return New(q, store, Key, HeaderIdentifier("Authorization"), DefaultErrorHandler(q))
+	return New(q, store, Key, HeaderIdentifier("Authorization"))
 }
 
-func New(q Quota, store Store, keyer Keyer, identifier Identifier, errorHandler ErrorHandler) Limiter {
+func New(q Quota, store Store, keyer Keyer, identifier Identifier) Limiter {
 	return Limiter{
-		quota:        q,
-		store:        store,
-		Keyer:        keyer,
-		Identifier:   identifier,
-		ErrorHandler: errorHandler,
+		quota:      q,
+		store:      store,
+		Keyer:      keyer,
+		Identifier: identifier,
 	}
 }
 
@@ -106,7 +103,7 @@ func (l Limiter) Check(req *http.Request) (Result, error) {
 	return result, nil
 }
 
-func (l Limiter) Handle(next http.Handler) http.Handler {
+func (l Limiter) Handle(next http.Handler, errorHandler ErrorHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		result, err := l.Check(req)
 
@@ -117,7 +114,7 @@ func (l Limiter) Handle(next http.Handler) http.Handler {
 		SetHeader(l.quota)(w, req)
 
 		if err != nil {
-			l.ErrorHandler(w, req, err)
+			errorHandler(w, req, err)
 			return
 		}
 		next.ServeHTTP(w, req)
@@ -158,14 +155,11 @@ func Key(now time.Time, slot int64, identifier string) string {
 }
 
 // DefaultErrorHandler is a simple error handler that responds with status code 429 when exceeding limits and 500 on any error.
-func DefaultErrorHandler(quota Quota) func(w http.ResponseWriter, req *http.Request, err error) {
-	return func(w http.ResponseWriter, req *http.Request, err error) {
-		if err == Error {
-			http.Error(w, "Too Many Requests", 429)
-		} else if err != nil {
-			log.Println(err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		}
+func DefaultErrorHandler(w http.ResponseWriter, req *http.Request, err error) {
+	if err == Error {
+		http.Error(w, "Too Many Requests", 429)
+	} else {
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 }
 
