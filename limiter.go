@@ -176,6 +176,20 @@ func IPIdentifier(req *http.Request) (string, error) {
 	return ip, nil
 }
 
+func ContextIdentifier(key interface{}) Identifier {
+	return func(req *http.Request) (string, error) {
+		ctxt := req.Context()
+		val := ctxt.Value(key)
+		if val == nil {
+			return "", nil
+		}
+		if s, ok := val.(string); ok {
+			return s, nil
+		}
+		return "", fmt.Errorf("type assertion failed from: %#v", ctxt.Value(key))
+	}
+}
+
 func HeaderIdentifier(name string) Identifier {
 	return func(req *http.Request) (string, error) {
 		return req.Header.Get(name), nil
