@@ -26,7 +26,7 @@ func main() {
 		redigostore.New(&pool),
 		limiter.Key,
 		limiter.HeaderIdentifier("X-User-Id"),
-		limiter.DefaultHeaderSetter,
+		limiter.SetHeader(quota),
 		limiter.DefaultErrorHandler)
 	// or limiter.Default(quota, redigostore.New(&pool))
 

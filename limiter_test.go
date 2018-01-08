@@ -79,9 +79,13 @@ func TestLimiter(t *testing.T) {
 	defer pool.Close()
 
 	quota := Quota{Limit: 3, Within: 1 * time.Second}
-	l := New(quota, redigostore.New(&pool), Key, HeaderIdentifier("X-USER-ID"), DefaultHeaderSetter, DefaultErrorHandler)
+	l := New(quota,
+		redigostore.New(&pool),
+		Key,
+		HeaderIdentifier("X-USER-ID"),
+		DefaultErrorHandler(quota))
 	i := incrementer{count: 0}
-	handler := l.Handle(&i)
+	handler := l.Handle(SetHeaderMiddleware(quota)(&i))
 
 	tests := []struct {
 		UserId                              string
@@ -127,7 +131,16 @@ func TestLimiter(t *testing.T) {
 			Body:        "3",
 			Limit:       "3",
 			Remaining:   "2",
-		}}
+		},
+		{
+			Description: "request without id",
+			UserId:      "",
+			Code:        200,
+			Body:        "4",
+			Limit:       "",
+			Remaining:   "",
+		},
+	}
 
 	for _, test := range tests {
 		req, _ := http.NewRequest("GET", "/", nil)

@@ -42,8 +42,6 @@ type Keyer func(now time.Time, slot int64, identifier string) string
 
 type Identifier func(req *http.Request) (string, error)
 
-type HeaderSetter func(w http.ResponseWriter, quota Quota, result Result)
-
 type ErrorHandler func(w http.ResponseWriter, req *http.Request, err error)
 
 type Result struct {
@@ -59,21 +57,19 @@ type Limiter struct {
 	store        Store
 	Keyer        Keyer
 	Identifier   Identifier
-	HeaderSetter HeaderSetter
 	ErrorHandler ErrorHandler
 }
 
 func Default(q Quota, store Store) Limiter {
-	return New(q, store, Key, HeaderIdentifier("Authorization"), DefaultHeaderSetter, DefaultErrorHandler)
+	return New(q, store, Key, HeaderIdentifier("Authorization"), DefaultErrorHandler(q))
 }
 
-func New(q Quota, store Store, keyer Keyer, identifier Identifier, headerSetter HeaderSetter, errorHandler ErrorHandler) Limiter {
+func New(q Quota, store Store, keyer Keyer, identifier Identifier, errorHandler ErrorHandler) Limiter {
 	return Limiter{
 		quota:        q,
 		store:        store,
 		Keyer:        keyer,
 		Identifier:   identifier,
-		HeaderSetter: headerSetter,
 		ErrorHandler: errorHandler,
 	}
 }
@@ -84,6 +80,7 @@ func (l Limiter) Check(req *http.Request) (Result, error) {
 		return Result{}, err
 	}
 	if id == "" {
+		// empty ids have no limits
 		return Result{}, nil
 	}
 
@@ -96,48 +93,56 @@ func (l Limiter) Check(req *http.Request) (Result, error) {
 			Id: id,
 		}, err
 	}
-	return Result{
+	result := Result{
 		Denied:    count > l.quota.Limit,
 		ResetsAt:  l.quota.ResetsAt(now),
 		Remaining: max(l.quota.Limit-count, 0),
 		Id:        id,
 		Counter:   count,
-	}, nil
+	}
+	if count > l.quota.Limit {
+		return result, Error
+	}
+	return result, nil
 }
 
 func (l Limiter) Handle(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		result, err := l.Check(req)
-		if err != nil {
-			l.ErrorHandler(w, req, err)
-			return
-		}
-		if result.Id == "" {
-			// empty ids have no limits
-			next.ServeHTTP(w, req)
-			return
-		}
 
 		ctx := req.Context()
 		ctx = context.WithValue(ctx, ResultContextKey, result)
 		req = req.WithContext(ctx)
 
-		l.HeaderSetter(w, l.quota, result)
+		SetHeader(l.quota)(w, req)
 
-		if result.Denied {
-			l.ErrorHandler(w, req, Error)
+		if err != nil {
+			l.ErrorHandler(w, req, err)
 			return
 		}
 		next.ServeHTTP(w, req)
 	})
 }
 
-// Default HeaderSetter
-func DefaultHeaderSetter(w http.ResponseWriter, quota Quota, result Result) {
-	headers := w.Header()
-	headers.Set("X-Rate-Limit-Limit", strconv.FormatInt(quota.Limit, 10))
-	headers.Set("X-Rate-Limit-Reset", strconv.FormatInt(result.ResetsAt.Unix(), 10))
-	headers.Set("X-Rate-Limit-Remaining", strconv.FormatInt(result.Remaining, 10))
+func SetHeader(quota Quota) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, req *http.Request) {
+		result, ok := Value(req)
+		if ok && result.Id != "" {
+			headers := w.Header()
+			headers.Set("X-Rate-Limit-Limit", strconv.FormatInt(quota.Limit, 10))
+			headers.Set("X-Rate-Limit-Reset", strconv.FormatInt(result.ResetsAt.Unix(), 10))
+			headers.Set("X-Rate-Limit-Remaining", strconv.FormatInt(result.Remaining, 10))
+		}
+	}
+}
+
+func SetHeaderMiddleware(quota Quota) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			next.ServeHTTP(w, req)
+			SetHeader(quota)(w, req)
+		})
+	}
 }
 
 // Shortcut
@@ -153,12 +158,14 @@ func Key(now time.Time, slot int64, identifier string) string {
 }
 
 // DefaultErrorHandler is a simple error handler that responds with status code 429 when exceeding limits and 500 on any error.
-func DefaultErrorHandler(w http.ResponseWriter, req *http.Request, err error) {
-	if err == Error {
-		http.Error(w, "Too Many Requests", 429)
-	} else if err != nil {
-		log.Println(err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+func DefaultErrorHandler(quota Quota) func(w http.ResponseWriter, req *http.Request, err error) {
+	return func(w http.ResponseWriter, req *http.Request, err error) {
+		if err == Error {
+			http.Error(w, "Too Many Requests", 429)
+		} else if err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
 	}
 }
 
