@@ -78,33 +78,44 @@ func New(q Quota, store Store, keyer Keyer, identifier Identifier, headerSetter 
 	}
 }
 
+func (l Limiter) Check(req *http.Request) (Result, error) {
+	id, err := l.Identifier(req)
+	if err != nil {
+		return Result{}, err
+	}
+	if id == "" {
+		return Result{}, nil
+	}
+
+	now := time.Now()
+	slot := now.Unix() / int64(l.quota.Within.Seconds())
+	key := l.Keyer(now, slot, id)
+	count, err := l.store.Get(key, l.quota.Within)
+	if err != nil {
+		return Result{
+			Id: id,
+		}, err
+	}
+	return Result{
+		Denied:    count > l.quota.Limit,
+		ResetsAt:  l.quota.ResetsAt(now),
+		Remaining: max(l.quota.Limit-count, 0),
+		Id:        id,
+		Counter:   count,
+	}, nil
+}
+
 func (l Limiter) Handle(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		id, err := l.Identifier(req)
+		result, err := l.Check(req)
 		if err != nil {
 			l.ErrorHandler(w, req, err)
 			return
 		}
-		if id == "" {
+		if result.Id == "" {
 			// empty ids have no limits
 			next.ServeHTTP(w, req)
 			return
-		}
-
-		now := time.Now()
-		slot := now.Unix() / int64(l.quota.Within.Seconds())
-		key := l.Keyer(now, slot, id)
-		count, err := l.store.Get(key, l.quota.Within)
-		if err != nil {
-			l.ErrorHandler(w, req, err)
-			return
-		}
-		result := Result{
-			Denied:    count > l.quota.Limit,
-			ResetsAt:  l.quota.ResetsAt(now),
-			Remaining: max(l.quota.Limit-count, 0),
-			Id:        id,
-			Counter:   count,
 		}
 
 		ctx := req.Context()
