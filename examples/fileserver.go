@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/garyburd/redigo/redis"
+	"github.com/gomodule/redigo/redis"
 	"github.com/mash/go-limiter"
 	"github.com/mash/go-limiter/redigostore"
 )
