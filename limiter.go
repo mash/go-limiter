@@ -7,12 +7,14 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
 const (
 	// The header name to retrieve an IP address under a proxy
 	forwardedForHeader = "X-FORWARDED-FOR"
+	realIPHeader       = "X-REAL-IP"
 )
 
 type contextkey int
@@ -164,8 +166,14 @@ func DefaultErrorHandler(w http.ResponseWriter, req *http.Request, err error) {
 }
 
 func IPIdentifier(req *http.Request) (string, error) {
+	if realIP := req.Header.Get(realIPHeader); realIP != "" {
+		if ipParsed := net.ParseIP(realIP); ipParsed != nil {
+			return ipParsed.String(), nil
+		}
+	}
 	if forwardedFor := req.Header.Get(forwardedForHeader); forwardedFor != "" {
-		if ipParsed := net.ParseIP(forwardedFor); ipParsed != nil {
+		ipStr := strings.TrimSpace(strings.Split(forwardedFor, ",")[0])
+		if ipParsed := net.ParseIP(ipStr); ipParsed != nil {
 			return ipParsed.String(), nil
 		}
 	}
