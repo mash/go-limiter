@@ -1,0 +1,4 @@
+github.com/gomodule/redigo v1.7.0 h1:ZKld1VOtsGhAe37E7wMxEDgAlGM5dvFY+DiOhSkhP9Y=
+github.com/gomodule/redigo v1.7.0/go.mod h1:B4C85qUVwatsJoIUNIfCRsp7qO0iAmpGFZ4EELWSbC4=
+github.com/soh335/go-test-redisserver v0.1.0 h1:FZYs/CVmUFP1uHVq7avxU+HpRoFIv2JWzhdV/g2Hyk4=
+github.com/soh335/go-test-redisserver v0.1.0/go.mod h1:vofbm8mr+As7DkCPPNA9Jy/KOA6bBl50xd0VUkisMzY=

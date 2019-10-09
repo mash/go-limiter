@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/garyburd/redigo/redis"
+	"github.com/gomodule/redigo/redis"
 	"github.com/mash/go-limiter/redigostore"
-	"github.com/soh335/go-test-redisserver"
+	redistest "github.com/soh335/go-test-redisserver"
 )
 
 // will be nil if we're testing on wercker
