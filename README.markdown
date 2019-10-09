@@ -15,7 +15,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/garyburd/redigo/redis"
+	"github.com/gomodule/redigo/redis"
 	"github.com/mash/go-limiter"
 	"github.com/mash/go-limiter/redigostore"
 )
@@ -28,15 +28,18 @@ func main() {
 	}
 	defer pool.Close()
 
-	quota := limiter.Quota{Limit: 3, Within: 1 * time.Minute}
-
 	// try:
 	// curl -v "http://localhost:8080/" -H "X-User-Id: 1"
-	l := limiter.New(quota, redigostore.New(&pool), limiter.Key, limiter.HeaderIdentifier("X-User-Id"), limiter.DefaultErrorHandler)
+
+	quota := limiter.Quota{Limit: 3, Within: 1 * time.Minute}
+	l := limiter.New(quota,
+		redigostore.New(&pool),
+		limiter.Key,
+		limiter.HeaderIdentifier("X-User-Id"))
 
 	handler := http.FileServer(http.Dir("."))
 	port := ":8080"
 	log.Println("Going to listen on " + port)
-	log.Fatal(http.ListenAndServe(port, l.Handle(handler)))
+	log.Fatal(http.ListenAndServe(port, l.Handle(handler, limiter.DefaultErrorHandler)))
 }
 ```

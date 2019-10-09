@@ -18,20 +18,25 @@ func main() {
 	}
 	defer pool.Close()
 
-	quota := limiter.Quota{Limit: 3, Within: 1 * time.Minute}
+	// fail early in case you havent started Redis yet
+	conn := pool.Get()
+	if err := conn.Err(); err != nil {
+		log.Fatalf("%s", err)
+	}
+	defer conn.Close()
 
 	// try:
 	// curl -v "http://localhost:8080/" -H "X-User-Id: 1"
+
+	quota := limiter.Quota{Limit: 3, Within: 1 * time.Minute}
 	l := limiter.New(quota,
 		redigostore.New(&pool),
 		limiter.Key,
-		limiter.HeaderIdentifier("X-User-Id"),
-		limiter.SetHeader(quota),
-		limiter.DefaultErrorHandler)
+		limiter.HeaderIdentifier("X-User-Id"))
 	// or limiter.Default(quota, redigostore.New(&pool))
 
 	handler := http.FileServer(http.Dir("."))
 	port := ":8080"
 	log.Println("Going to listen on " + port)
-	log.Fatal(http.ListenAndServe(port, l.Handle(handler)))
+	log.Fatal(http.ListenAndServe(port, l.Handle(handler, limiter.DefaultErrorHandler)))
 }
