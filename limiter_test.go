@@ -1,6 +1,7 @@
 package limiter
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -161,5 +162,27 @@ func TestLimiter(t *testing.T) {
 		if recorder.HeaderMap.Get("X-Rate-Limit-Remaining") != test.Remaining {
 			t.Errorf("Expected X-Rate-Limit-Remaining: %s but got: %s, recorder: %#v", test.Remaining, recorder.HeaderMap.Get("X-Rate-Limit-Remaining"), recorder)
 		}
+	}
+}
+
+type testStore struct{}
+
+func (_ testStore) Get(_ string, _ time.Duration) (int64, error) {
+	return 0, nil
+}
+
+func TestKeyWithNowFuncOverride(t *testing.T) {
+	l := Default(Quota{Limit: 3, Within: 1 * time.Second}, testStore{})
+
+	orig := NowFunc
+	NowFunc = func() time.Time {
+		return time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC)
+	}
+	defer func() {
+		NowFunc = orig
+	}()
+
+	if e, g := fmt.Sprintf("limiter-%d-test", time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC).Unix()), l.Key("test"); e != g {
+		t.Errorf("Expected Key: %s but got: %s", e, g)
 	}
 }

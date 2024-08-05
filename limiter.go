@@ -74,7 +74,7 @@ func New(q Quota, store Store, keyer Keyer, identifier Identifier) Limiter {
 }
 
 func (l Limiter) Key(id string) string {
-	now := time.Now()
+	now := NowFunc()
 	slot := now.Unix() / int64(l.quota.Within.Seconds())
 	return l.Keyer(now, slot, id)
 }
@@ -89,7 +89,7 @@ func (l Limiter) Check(req *http.Request) (Result, error) {
 		return Result{}, nil
 	}
 
-	now := time.Now()
+	now := NowFunc()
 	key := l.Key(id)
 	count, err := l.store.Get(key, l.quota.Within)
 	if err != nil {
@@ -208,3 +208,5 @@ func HeaderIdentifier(name string) Identifier {
 		return req.Header.Get(name), nil
 	}
 }
+
+var NowFunc = time.Now
